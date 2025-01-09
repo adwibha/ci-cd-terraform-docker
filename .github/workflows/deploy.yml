@@ -22,19 +22,27 @@ jobs:
           aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
           aws configure set default.region us-east-1
 
-      - name: Build Docker Image
-        run: |
-          docker build -t my-app -f ./app/Dockerfile ./app
-          docker tag my-app:latest $(terraform output -raw ecr_repository_url):latest
-
-      - name: Push Docker Image to ECR
-        run: |
-          aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin $(terraform output -raw ecr_repository_url)
-          docker push $(terraform output -raw ecr_repository_url):latest
-
-      - name: Deploy Infrastructure
+      - name: Deploy Infrastructure (Terraform)
         run: |
           cd terraform
           terraform init
           terraform apply -auto-approve
+
+      - name: Get ECR Repository URL
+        id: ecr
+        run: |
+          echo "ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)" >> $GITHUB_ENV
+
+      - name: Build Docker Image
+        run: |
+          docker build -t my-app -f ./app/Dockerfile ./app
+          docker tag my-app:latest ${{ env.ECR_REPOSITORY_URL }}:latest
+
+      - name: Log in to ECR
+        run: |
+          aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin ${{ env.ECR_REPOSITORY_URL }}
+
+      - name: Push Docker Image to ECR
+        run: |
+          docker push ${{ env.ECR_REPOSITORY_URL }}:latest
 

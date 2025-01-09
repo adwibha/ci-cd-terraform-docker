@@ -31,20 +31,22 @@ jobs:
       - name: Get ECR Repository URL
         id: ecr
         run: |
-          ECR_REPOSITORY_URL=$(terraform output -json ecr_repository_url | jq -r .value)
+          ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)
           echo "ECR_REPOSITORY_URL=$ECR_REPOSITORY_URL" >> $GITHUB_ENV
-          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"
+          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL
 
       - name: Build Docker Image
         run: |
+          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL before use
           docker build -t my-app -f ./app/Dockerfile ./app
-          docker tag my-app:latest ${{ env.ECR_REPOSITORY_URL }}:latest
+          docker tag my-app:latest ${{ env.ECR_REPOSITORY_URL }}:latest  # Correct format for tagging
 
       - name: Log in to ECR
         run: |
-          aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin ${{ env.ECR_REPOSITORY_URL }}
+          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL before login
+          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ env.ECR_REPOSITORY_URL }}
 
       - name: Push Docker Image to ECR
         run: |
+          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL before pushing
           docker push ${{ env.ECR_REPOSITORY_URL }}:latest
-

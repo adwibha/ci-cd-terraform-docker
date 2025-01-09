@@ -32,6 +32,7 @@ jobs:
         id: ecr
         run: |
           echo "ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)" >> $GITHUB_ENV
+          echo "ECR_REPOSITORY_URL: ${{ env.ECR_REPOSITORY_URL }}"
 
       - name: Build Docker Image
         run: |

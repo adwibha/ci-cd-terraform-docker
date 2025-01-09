@@ -1,0 +1,40 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Log in to AWS
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+          aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+          aws configure set default.region us-east-1
+
+      - name: Build Docker Image
+        run: |
+          docker build -t my-app .
+          docker tag my-app:latest $(terraform output -raw ecr_repository_url):latest
+
+      - name: Push Docker Image to ECR
+        run: |
+          aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin $(terraform output -raw ecr_repository_url)
+          docker push $(terraform output -raw ecr_repository_url):latest
+
+      - name: Deploy Infrastructure
+        run: |
+          cd terraform
+          terraform init
+          terraform apply -auto-approve
+

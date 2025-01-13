@@ -10,10 +10,12 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+      # Step 1: Checkout the code
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Log in to AWS
+      # Step 2: Log in to AWS
+      - name: Configure AWS Credentials
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -22,31 +24,39 @@ jobs:
           aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
           aws configure set default.region us-east-1
 
-      - name: Deploy Infrastructure (Terraform)
+      # Step 3: Terraform - Deploy Infrastructure
+      - name: Deploy Infrastructure with Terraform
+        working-directory: terraform
+        env:
+          TF_LOG: WARN # Set Terraform log level
         run: |
-          cd terraform
           terraform init
           terraform apply -auto-approve
 
-      - name: Get ECR Repository URL
+      # Step 4: Extract Terraform Outputs
+      - name: Get ECR Repository URL from Terraform Outputs
         id: ecr
+        working-directory: terraform
         run: |
           ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)
           echo "ECR_REPOSITORY_URL=$ECR_REPOSITORY_URL" >> $GITHUB_ENV
-          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL
+          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"
 
+      # Step 5: Build Docker Image
       - name: Build Docker Image
         run: |
-          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL before use
+          echo "Building Docker Image for repository: $ECR_REPOSITORY_URL"
           docker build -t my-app -f ./app/Dockerfile ./app
-          docker tag my-app:latest ${{ env.ECR_REPOSITORY_URL }}:latest  # Correct format for tagging
+          docker tag my-app:latest ${{ env.ECR_REPOSITORY_URL }}:latest
 
-      - name: Log in to ECR
+      # Step 6: Log in to Amazon ECR
+      - name: Log in to Amazon ECR
         run: |
-          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL before login
+          echo "Logging in to Amazon ECR repository: $ECR_REPOSITORY_URL"
           aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ env.ECR_REPOSITORY_URL }}
 
-      - name: Push Docker Image to ECR
+      # Step 7: Push Docker Image to Amazon ECR
+      - name: Push Docker Image to Amazon ECR
         run: |
-          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL before pushing
+          echo "Pushing Docker Image to repository: $ECR_REPOSITORY_URL"
           docker push ${{ env.ECR_REPOSITORY_URL }}:latest

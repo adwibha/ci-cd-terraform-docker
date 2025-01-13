@@ -10,12 +10,10 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # Checkout Code
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # AWS Configuration and Terraform Setup
-      - name: Configure AWS Credentials
+      - name: Log in to AWS
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -24,45 +22,31 @@ jobs:
           aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
           aws configure set default.region us-east-1
 
-      # Terraform - Deploy Infrastructure
-      - name: Deploy Infrastructure with Terraform
-        working-directory: terraform
+      - name: Deploy Infrastructure (Terraform)
         run: |
+          cd terraform
           terraform init
           terraform apply -auto-approve
 
-      # Get ECR Repository URL from Terraform Outputs
-      - name: Get ECR Repository URL from Terraform Outputs
+      - name: Get ECR Repository URL
         id: ecr
-        working-directory: terraform
         run: |
           ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)
-          echo "ECR_REPOSITORY_URL=$ECR_REPOSITORY_URL" >> $GITHUB_ENV  # Set environment variable
+          echo "ECR_REPOSITORY_URL=$ECR_REPOSITORY_URL" >> $GITHUB_ENV
           echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL
 
-      # Build Docker Image
       - name: Build Docker Image
         run: |
+          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL before use
           docker build -t my-app -f ./app/Dockerfile ./app
-          docker tag my-app:latest ${{ env.ECR_REPOSITORY_URL }}:latest
+          docker tag my-app:latest ${{ env.ECR_REPOSITORY_URL }}:latest  # Correct format for tagging
 
-      # Log in to Amazon ECR
-      - name: Log in to Amazon ECR
+      - name: Log in to ECR
         run: |
+          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL before login
           aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ env.ECR_REPOSITORY_URL }}
 
-      # Push Docker Image to Amazon ECR
-      - name: Push Docker Image to Amazon ECR
+      - name: Push Docker Image to ECR
         run: |
+          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL before pushing
           docker push ${{ env.ECR_REPOSITORY_URL }}:latest
-
-      # Cleanup - Destroy Terraform Resources and Delete ECR Repository
-      - name: Cleanup - Destroy Terraform Resources and Delete ECR Repository
-        if: always() # Runs on both success and failure
-        working-directory: terraform
-        run: |
-          echo "Destroying Terraform resources and deleting ECR repository..."
-
-          # Initialize Terraform for destruction
-          terraform init
-          terraform destroy -auto-approve

@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # Step 1: Checkout the code
+      # Checkout Code
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # Step 2: Log in to AWS
+      # AWS Configuration and Terraform Setup
       - name: Configure AWS Credentials
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -24,64 +24,62 @@ jobs:
           aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
           aws configure set default.region us-east-1
 
-      # Step 3: Terraform - Deploy Infrastructure
+      # Terraform - Deploy Infrastructure
       - name: Deploy Infrastructure with Terraform
         working-directory: terraform
-        env:
-          TF_LOG: WARN # Set Terraform log level
         run: |
           terraform init
           terraform apply -auto-approve
 
-      # Step 4: Extract Terraform Outputs and Set ECR Repository URL as GitHub Env Variable
+      # Get ECR Repository URL from Terraform Outputs
       - name: Get ECR Repository URL from Terraform Outputs
         id: ecr
         working-directory: terraform
         run: |
           ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)
-          echo "ECR_REPOSITORY_URL=$ECR_REPOSITORY_URL" >> $GITHUB_ENV  # Set environment variable for use in subsequent steps
+          echo "ECR_REPOSITORY_URL=$ECR_REPOSITORY_URL" >> $GITHUB_ENV  # Set environment variable
           echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL
 
-      # Step 5: Build Docker Image
+      # Build Docker Image
       - name: Build Docker Image
         run: |
-          echo "Building Docker Image for repository: ${{ env.ECR_REPOSITORY_URL }}"
           docker build -t my-app -f ./app/Dockerfile ./app
           docker tag my-app:latest ${{ env.ECR_REPOSITORY_URL }}:latest
 
-      # Step 6: Log in to Amazon ECR
+      # Log in to Amazon ECR
       - name: Log in to Amazon ECR
         run: |
-          echo "Logging in to Amazon ECR repository: ${{ env.ECR_REPOSITORY_URL }}"
           aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ env.ECR_REPOSITORY_URL }}
 
-      # Step 7: Push Docker Image to Amazon ECR
+      # Push Docker Image to Amazon ECR
       - name: Push Docker Image to Amazon ECR
         run: |
-          echo "Pushing Docker Image to repository: ${{ env.ECR_REPOSITORY_URL }}"
           docker push ${{ env.ECR_REPOSITORY_URL }}:latest
 
-      # Step 8: Cleanup - Destroy Terraform Resources (Runs on both success and failure)
-      - name: Cleanup - Destroy Terraform Resources
-        if: always() # This step runs whether the pipeline succeeds or fails
+      # Cleanup - Destroy Terraform Resources and ECR Cleanup
+      - name: Cleanup - Destroy Terraform Resources and Delete ECR Images
+        if: always() # Runs on both success and failure
         working-directory: terraform
-        env:
-          TF_LOG: WARN
         run: |
-          echo "Cleaning up Terraform resources after run..."
+          echo "Cleaning up Terraform resources and deleting ECR images..."
 
           # Initialize Terraform for destruction
           terraform init
-
-          # Destroy the Terraform-managed resources
           terraform destroy -auto-approve
 
-          # Delete All Images from ECR Repository (optional)
-          echo "Deleting images from ECR repository: ${{ env.ECR_REPOSITORY_URL }}"
+          # Delete images from ECR repository
           IMAGE_DIGESTS=$(aws ecr list-images --repository-name my-app --query 'imageIds[*].imageDigest' --output text)
+          if [ -n "$IMAGE_DIGESTS" ]; then
+            echo "Deleting images from ECR repository: ${{ env.ECR_REPOSITORY_URL }}"
+            # Loop through image digests and delete each image
+            for DIGEST in $IMAGE_DIGESTS; do
+              echo "Deleting image with digest $DIGEST"
+              aws ecr batch-delete-image --repository-name my-app --image-ids imageDigest=$DIGEST
+            done
+          else
+            echo "No images found to delete in ECR."
+          fi
 
-          # Loop through the image digests and delete each image
-          for DIGEST in $IMAGE_DIGESTS; do
-            echo "Deleting image with digest $DIGEST"
-            aws ecr batch-delete-image --repository-name my-app --image-ids imageDigest=$DIGEST
-          done
+          # Force Delete ECR Repository (Optional: This step will delete the repository if empty)
+          echo "Deleting ECR repository if it is empty."
+          aws ecr delete-repository --repository-name my-app --force

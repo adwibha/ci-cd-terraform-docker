@@ -33,30 +33,30 @@ jobs:
           terraform init
           terraform apply -auto-approve
 
-      # Step 4: Extract Terraform Outputs
+      # Step 4: Extract Terraform Outputs and Set ECR Repository URL as GitHub Env Variable
       - name: Get ECR Repository URL from Terraform Outputs
         id: ecr
         working-directory: terraform
         run: |
           ECR_REPOSITORY_URL=$(terraform output -raw ecr_repository_url)
-          echo "ECR_REPOSITORY_URL=$ECR_REPOSITORY_URL" >> $GITHUB_ENV
-          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"
+          echo "ECR_REPOSITORY_URL=$ECR_REPOSITORY_URL" >> $GITHUB_ENV  # Set environment variable for use in subsequent steps
+          echo "ECR_REPOSITORY_URL: $ECR_REPOSITORY_URL"  # Debugging: log the URL
 
       # Step 5: Build Docker Image
       - name: Build Docker Image
         run: |
-          echo "Building Docker Image for repository: $ECR_REPOSITORY_URL"
+          echo "Building Docker Image for repository: ${{ env.ECR_REPOSITORY_URL }}"
           docker build -t my-app -f ./app/Dockerfile ./app
           docker tag my-app:latest ${{ env.ECR_REPOSITORY_URL }}:latest
 
       # Step 6: Log in to Amazon ECR
       - name: Log in to Amazon ECR
         run: |
-          echo "Logging in to Amazon ECR repository: $ECR_REPOSITORY_URL"
+          echo "Logging in to Amazon ECR repository: ${{ env.ECR_REPOSITORY_URL }}"
           aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${{ env.ECR_REPOSITORY_URL }}
 
       # Step 7: Push Docker Image to Amazon ECR
       - name: Push Docker Image to Amazon ECR
         run: |
-          echo "Pushing Docker Image to repository: $ECR_REPOSITORY_URL"
+          echo "Pushing Docker Image to repository: ${{ env.ECR_REPOSITORY_URL }}"
           docker push ${{ env.ECR_REPOSITORY_URL }}:latest

@@ -34,17 +34,30 @@ resource "aws_ecs_service" "my_service" {
   name            = "my_service"
 }
 
-# Force delete images before the repository is deleted
+# Force delete images and the repository itself before destroying the repository
 resource "null_resource" "delete_ecr_images" {
   depends_on = [aws_ecr_repository.my_repo]
 
   provisioner "local-exec" {
     command = <<EOT
+      # Delete all images in the ECR repository
       IMAGE_DIGESTS=$(aws ecr list-images --repository-name my-app --query 'imageIds[*].imageDigest' --output text)
-      for DIGEST in $IMAGE_DIGESTS; do
-        echo "Deleting image with digest $DIGEST"
-        aws ecr batch-delete-image --repository-name my-app --image-ids imageDigest=$DIGEST
-      done
+      
+      if [ -n "$IMAGE_DIGESTS" ]; then
+        for DIGEST in $IMAGE_DIGESTS; do
+          echo "Deleting image with digest $DIGEST"
+          aws ecr batch-delete-image --repository-name my-app --image-ids imageDigest=$DIGEST
+        done
+      fi
+
+      # Now delete the repository
+      echo "Deleting repository 'my-app'"
+      aws ecr delete-repository --repository-name my-app --force
     EOT
+  }
+
+  # Ensure this runs only when destroying the infrastructure
+  lifecycle {
+    ignore_changes = [command]
   }
 }

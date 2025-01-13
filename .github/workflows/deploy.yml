@@ -61,13 +61,27 @@ jobs:
           echo "Pushing Docker Image to repository: ${{ env.ECR_REPOSITORY_URL }}"
           docker push ${{ env.ECR_REPOSITORY_URL }}:latest
 
-      # Cleanup on Failure: Destroy Terraform Resources
-      - name: Destroy Terraform Resources
-        if: failure() || always() # Always run on failure or success
+      # Step 8: Cleanup - Destroy Terraform Resources (Runs on both success and failure)
+      - name: Cleanup - Destroy Terraform Resources
+        if: always() # This step runs whether the pipeline succeeds or fails
         working-directory: terraform
         env:
           TF_LOG: WARN
         run: |
-          echo "Cleaning up Terraform resources..."
+          echo "Cleaning up Terraform resources after run..."
+
+          # Initialize Terraform for destruction
           terraform init
+
+          # Destroy the Terraform-managed resources
           terraform destroy -auto-approve
+
+          # Delete All Images from ECR Repository (optional)
+          echo "Deleting images from ECR repository: ${{ env.ECR_REPOSITORY_URL }}"
+          IMAGE_DIGESTS=$(aws ecr list-images --repository-name my-app --query 'imageIds[*].imageDigest' --output text)
+
+          # Loop through the image digests and delete each image
+          for DIGEST in $IMAGE_DIGESTS; do
+            echo "Deleting image with digest $DIGEST"
+            aws ecr batch-delete-image --repository-name my-app --image-ids imageDigest=$DIGEST
+          done

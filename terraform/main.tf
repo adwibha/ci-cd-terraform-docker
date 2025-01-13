@@ -4,6 +4,10 @@ provider "aws" {
 
 resource "aws_ecr_repository" "my_repo" {
   name = "my-app"
+
+  lifecycle {
+    prevent_destroy = false  
+  }
 }
 
 resource "aws_ecs_cluster" "my_cluster" {
@@ -29,4 +33,3 @@ resource "aws_ecs_service" "my_service" {
   desired_count   = 1
   name            = "my_service"
 }
-

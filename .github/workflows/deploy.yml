@@ -24,7 +24,7 @@ jobs:
           aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
           aws configure set default.region us-east-1
 
-      # Terraform - Deploy Infrastructure through terraform
+      # Terraform - Deploy Infrastructure
       - name: Deploy Infrastructure with Terraform
         working-directory: terraform
         run: |
@@ -56,30 +56,13 @@ jobs:
         run: |
           docker push ${{ env.ECR_REPOSITORY_URL }}:latest
 
-      # Cleanup - Destroy Terraform Resources and ECR Cleanup
-      - name: Cleanup - Destroy Terraform Resources and Delete ECR Images
+      # Cleanup - Destroy Terraform Resources and Delete ECR Repository
+      - name: Cleanup - Destroy Terraform Resources and Delete ECR Repository
         if: always() # Runs on both success and failure
         working-directory: terraform
         run: |
-          echo "Cleaning up Terraform resources and deleting ECR images..."
+          echo "Destroying Terraform resources and deleting ECR repository..."
 
           # Initialize Terraform for destruction
           terraform init
           terraform destroy -auto-approve
-
-          # Delete images from ECR repository
-          IMAGE_DIGESTS=$(aws ecr list-images --repository-name my-app --query 'imageIds[*].imageDigest' --output text)
-          if [ -n "$IMAGE_DIGESTS" ]; then
-            echo "Deleting images from ECR repository: ${{ env.ECR_REPOSITORY_URL }}"
-            # Loop through image digests and delete each image
-            for DIGEST in $IMAGE_DIGESTS; do
-              echo "Deleting image with digest $DIGEST"
-              aws ecr batch-delete-image --repository-name my-app --image-ids imageDigest=$DIGEST
-            done
-          else
-            echo "No images found to delete in ECR."
-          fi
-
-          # Force Delete ECR Repository (Optional: This step will delete the repository if empty)
-          echo "Deleting ECR repository if it is empty."
-          aws ecr delete-repository --repository-name my-app --force
